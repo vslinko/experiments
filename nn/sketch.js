@@ -1,10 +1,3 @@
-const trainingData = [
-  [[1, 1], [0]],
-  [[1, 0], [1]],
-  [[0, 1], [1]],
-  [[0, 0], [0]],
-]
-
 let nn;
 const trainCount = 60000;
 const testCount = 10000;
@@ -19,43 +12,40 @@ const STATE_TESTING = 'testing';
 const STATE_CUSTOM_TESTING = 'custom-testing';
 let state = STATE_LOADING;
 
+function getTrainImage(n) {
+  const start = n * trainImageSize;
+  const end = start + trainImageSize;
+  return trainImages.slice(start, end);
+}
+
+function getTestImage(n) {
+  const start = n * trainImageSize;
+  const end = start + trainImageSize;
+  return testImages.slice(start, end);
+}
+
 function setup() {
   loadNN();
 
   loadBytes('train-labels-idx1-ubyte', ({ bytes }) => {
-    const prefix = 8;
-    trainLabels = bytes.slice(prefix);
+    trainLabels = bytes.slice(8);
   });
 
   loadBytes('t10k-labels-idx1-ubyte', ({ bytes }) => {
-    const prefix = 8;
-    testLabels = bytes.slice(prefix);
+    testLabels = bytes.slice(8);
   });
 
   loadBytes('train-images-idx3-ubyte', ({ bytes }) => {
-    const prefix = 16;
-    const bytesArray = Array.from(bytes).slice(prefix);
-    trainImages = Array.from(new Array(trainCount), (v, i) => {
-      const start = i * trainImageSize;
-      const end = start + trainImageSize;
-      return bytesArray.slice(start, end);
-    });
+    trainImages = Float32Array.from(bytes.slice(16), v => v / 255);
   });
 
   loadBytes('t10k-images-idx3-ubyte', ({ bytes }) => {
-    const prefix = 16;
-    const bytesArray = Array.from(bytes).slice(prefix);
-    testImages = Array.from(new Array(testCount), (v, i) => {
-      const start = i * trainImageSize;
-      const end = start + trainImageSize;
-      return bytesArray.slice(start, end);
-    });
+    testImages = Float32Array.from(bytes.slice(16), v => v / 255);
   });
 
   trainIndexes = Array.from(new Array(trainCount), (v, i) => i);
 
   createCanvas(trainImageWidth * pixelSize, trainImageHeight * pixelSize);
-  frameRate(120);
 }
 
 function drawLoading() {
@@ -82,10 +72,9 @@ function drawTraining() {
 
   for (let i = 0; i < 500; i++) {
     const ii = trainIndexes[trainingI];
-    image = trainImages[ii];
+    image = getTrainImage(ii);
     label = trainLabels[ii];
 
-    const inputs = image;
     const targets = [
       label === 0 ? 1 : 0,
       label === 1 ? 1 : 0,
@@ -99,14 +88,14 @@ function drawTraining() {
       label === 9 ? 1 : 0,
     ];
 
-    nn.train(inputs, targets);
+    nn.train(image, targets);
 
     trainingI++;
   }
 
   for (let w = 0; w < trainImageWidth; w++) {
     for (let h = 0; h < trainImageHeight; h++) {
-      fill(image[w + h * trainImageWidth]);
+      fill(image[w + h * trainImageWidth] * 255);
       noStroke();
       rect(w * pixelSize, h * pixelSize, pixelSize, pixelSize);
     }
@@ -121,42 +110,82 @@ function drawTraining() {
   }
 }
 
-let userImage = new Uint8Array(784).fill(0);
+let userImage = new Float32Array(trainImageSize);
 
 function doubleClicked() {
   if (state === STATE_CUSTOM_TESTING) {
-    userImage = new Uint8Array(784).fill(0);
+    userImage = new Float32Array(trainImageSize);
   } else if (state == STATE_TRAINING) {
     goToCustomTesting();
   }
 }
 
+function updateUserImage(x, y, v) {
+  const i = x + y * trainImageWidth;
+  if (i >= 0 && i < userImage.length) {
+    userImage[i] += v;
+    if (userImage[i] > 1) {
+      userImage[i] = 1;
+    }
+  }
+}
+
 function mouseDragged() {
   if (state == STATE_CUSTOM_TESTING) {
-    const w = Math.floor(mouseX / pixelSize);
-    const h = Math.floor(mouseY / pixelSize);
+    const x = Math.floor(mouseX / pixelSize);
+    const y = Math.floor(mouseY / pixelSize);
   
-    userImage[w + h * trainImageWidth] = 255;
+    updateUserImage(x, y, 1);
+    updateUserImage(x-1, y, 0.25);
+    updateUserImage(x, y-1, 0.25);
+    updateUserImage(x+1, y, 0.25);
+    updateUserImage(x, y+1, 0.25);
   }
 }
 
 function goToCustomTesting() {
-  userImage = new Uint8Array(784).fill(0);
+  userImage = new Float32Array(trainImageSize);
   state = STATE_CUSTOM_TESTING;
 }
 function drawCustomTesting() {
   for (let w = 0; w < trainImageWidth; w++) {
     for (let h = 0; h < trainImageHeight; h++) {
-      fill(userImage[w + h * trainImageWidth]);
+      fill(userImage[w + h * trainImageWidth] * 255);
       noStroke();
       rect(w * pixelSize, h * pixelSize, pixelSize, pixelSize);
     }
   }
 
-  const prediction = nn.predict(Array.from(userImage));
+  const prediction = nn.predict(userImage);
+
+  const { maxIndex } = prediction.reduce((acc, v, i) => {
+    if (v > acc.maxValue) {
+      acc.maxValue = v;
+      acc.maxIndex = i;
+    }
+    return acc;
+  }, { maxValue: -1, maxIndex: -1 });
+
   fill(255);
   textAlign(LEFT, TOP);
-  text(prediction.map((x, i) => `${i} = ${x.toFixed(2)}`).join('\n'), 20, 20);
+  text(maxIndex, 20, 20);
+  text(prediction.map((x, i) => `${i} = ${x.toFixed(2)}`).join('\n'), 20, 40);
+}
+
+function trainUserImage(label) {
+  nn.train(userImage, [
+    label === 0 ? 1 : 0,
+    label === 1 ? 1 : 0,
+    label === 2 ? 1 : 0,
+    label === 3 ? 1 : 0,
+    label === 4 ? 1 : 0,
+    label === 5 ? 1 : 0,
+    label === 6 ? 1 : 0,
+    label === 7 ? 1 : 0,
+    label === 8 ? 1 : 0,
+    label === 9 ? 1 : 0,
+  ]);
+  userImage = new Float32Array(trainImageSize);
 }
 
 let testedTotal = 0;
@@ -172,7 +201,7 @@ function drawTesting() {
   let result;
   let image;
   for (let i = 0; i < 1; i++) {
-    image = testImages[testI];
+    image = getTestImage(testI);
     result = nn.predict(image);
     const { maxIndex } = result.reduce((acc, v, i) => {
       if (v > acc.maxValue) {
@@ -192,7 +221,7 @@ function drawTesting() {
 
   for (let w = 0; w < trainImageWidth; w++) {
     for (let h = 0; h < trainImageHeight; h++) {
-      fill(image[w + h * trainImageWidth]);
+      fill(image[w + h * trainImageWidth] * 255);
       noStroke();
       rect(w * pixelSize, h * pixelSize, pixelSize, pixelSize);
     }
@@ -221,7 +250,7 @@ function draw() {
 }
 
 function saveNN() {
-  localStorage.setItem('nn', JSON.stringify(nn.serialize()));
+  localStorage.setItem('nn', JSON.stringify(nn));
 }
 
 function loadNN() {
@@ -230,7 +259,7 @@ function loadNN() {
     nn = NeuralNetwork.deserialize(JSON.parse(item));
   } else {
     nn = new NeuralNetwork(trainImageSize);
-    nn.addLayer(16);
+    nn.learningRate = 0.5;
     nn.addLayer(16);
     nn.addLayer(10);
   }

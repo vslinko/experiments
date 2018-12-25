@@ -8,38 +8,50 @@ const tanh = {
   dfn: y => 1 - (y * y),
 };
 
+class Layer {
+  constructor(biases, weights) {
+    this.biases = biases;
+    this.weights = weights;
+  }
+
+  toJSON() {
+    return {
+      biases: this.biases.toJSON(),
+      weights: this.weights.toJSON(),
+    };
+  }
+
+  static deserialize(data) {
+    return new Layer(
+      Matrix.deserialize(data.biases),
+      Matrix.deserialize(data.weights),
+    );
+  }
+}
+
 class NeuralNetwork {
-  constructor(inputsSize) {
+  constructor(inputsSize, layers = [], learningRate = 0.1) {
     this.inputsSize = inputsSize;
-    this.layers = [];
-    this.learningRate = 0.1;
+    this.layers = layers;
+    this.learningRate = learningRate;
     this.activationFn = sigmoid;
   }
 
   addLayer(size) {
     const previousLayerSize = this.layers.length > 0
-      ? this.layers[this.layers.length - 1].biases.length
+      ? this.layers[this.layers.length - 1].biases.rows
       : this.inputsSize;
 
-    const biases = [];
-    const weights = [];
+    const biases = new Matrix(size, 1).fillRandom();
+    const weights = new Matrix(size, previousLayerSize).fillRandom();
 
-    for (let i = 0; i < size; i++) {
-      biases.push([Math.random()]);
-      const weightsRow = [];
-      for (let j = 0; j < previousLayerSize; j++) {
-        weightsRow.push(Math.random());
-      }
-      weights.push(weightsRow);
-    }
-
-    this.layers.push({ biases, weights });
+    this.layers.push(new Layer(biases, weights));
   }
 
   predict(inputs) {
     const log = this._predict(inputs);
 
-    return matrixToVector(log[log.length - 1]);
+    return log[log.length - 1].toVectorArray();
   }
 
   _predict(inputs) {
@@ -49,15 +61,15 @@ class NeuralNetwork {
 
     const log = new Array(this.layers.length + 1);
 
-    let a = vectorToMatrix(inputs);
+    let a = Matrix.fromVectorArray(inputs);
     log[0] = a;
 
     for (let i = 0; i < this.layers.length; i++) {
       const layer = this.layers[i];
 
-      a = matrixMultiply(layer.weights, a);
-      a = matrixAdd(a, layer.biases);
-      a = matrixMap(a, this.activationFn.fn);
+      a = Matrix.multiply(layer.weights, a);
+      a.add(layer.biases);
+      a.map(this.activationFn.fn);
 
       log[i + 1] = a;
     }
@@ -69,53 +81,50 @@ class NeuralNetwork {
     const log = this._predict(inputs);
     const result = log[log.length - 1];
 
-    if (targets.length != result.length) {
+    if (targets.length != result.rows) {
       throw new Error();
     }
 
-    let errors = matrixSubtract(vectorToMatrix(targets), vectorToMatrix(result));
-
-    const newLayers = new Array(this.layers.length);
+    let errors = Matrix.fromVectorArray(targets);
+    errors.subtract(result);
 
     for (let i = this.layers.length - 1; i >= 0; i--) {
       const currentLayer = this.layers[i];
       const currentLayerResult = log[i + 1];
       const previousLayerResult = log[i];
 
-      let gradients = matrixMap(currentLayerResult, this.activationFn.dfn);
-      gradients = matrixMultiplyHadamard(gradients, errors);
-      gradients = matrixMultiplyScalar(gradients, this.learningRate);
+      const gradients = currentLayerResult.copy();
+      gradients.map(this.activationFn.dfn);
+      gradients.multiplyHadamard(errors);
+      gradients.multiplyScalar(this.learningRate);
 
-      const previousLayerResultT = matrixTranspose(previousLayerResult);
-      const deltas = matrixMultiply(gradients, previousLayerResultT);
-
-      newLayers[i] = {
-        weights: matrixAdd(currentLayer.weights, deltas),
-        biases: matrixAdd(currentLayer.biases, gradients),
-      };
-
-      errors = matrixMultiply(
-        matrixTranspose(currentLayer.weights),
+      errors = Matrix.multiply(
+        Matrix.transpose(currentLayer.weights),
         errors
       );
-    }
+  
+      const previousLayerResultT = Matrix.transpose(previousLayerResult);
+      const deltas = Matrix.multiply(gradients, previousLayerResultT);
 
-    this.layers = newLayers;
+      currentLayer.weights.add(deltas);
+      currentLayer.biases.add(gradients);
+    }
   }
 
-  serialize() {
+  toJSON() {
     return {
       inputsSize: this.inputsSize,
-      layers: this.layers,
+      layers: this.layers.map(l => l.toJSON()),
       learningRate: this.learningRate,
     };
   }
 
   static deserialize(data) {
-    const nn = new NeuralNetwork(0);
-    nn.inputsSize = data.inputsSize;
-    nn.layers = data.layers;
-    nn.learningRate = data.learningRate;
+    const nn = new NeuralNetwork(
+      data.inputsSize,
+      data.layers.map(l => Layer.deserialize(l)),
+      data.learningRate,
+    );
     return nn;
   }
 }

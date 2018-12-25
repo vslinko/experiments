@@ -1,123 +1,162 @@
-function vectorToMatrix(vec) {
-  return vec.map(v => [v]);
-}
-
-function matrixToVector(matrix) {
-  return matrix.map(([v]) => v);
-}
-
-function matrixTranspose(a) {
-  const b = new Array(a[0].length);
-
-  for (let i = 0; i < a[0].length; i++) {
-    b[i] = new Array(a.length);
-    for (let j = 0; j < a.length; j++) {
-      b[i][j] = a[j][i];
-    }
+class Matrix {
+  constructor(rows, cols, data = new Float32Array(rows * cols)) {
+    this.rows = rows;
+    this.cols = cols;
+    this.data = data;
   }
 
-  return b;
-}
-
-function matrixMap(a, fn) {
-  const b = new Array(a.length);
-
-  for (let i = 0; i < a.length; i++) {
-    b[i] = new Array(a[i].length);
-    for (let j = 0; j < a[i].length; j++) {
-      b[i][j] = fn(a[i][j]);
-    }
+  static fromVectorArray(vector) {
+    return new Matrix(vector.length, 1, Float32Array.from(vector));
   }
 
-  return b;
-}
-
-function matrixMultiplyScalar(a, b) {
-  const c = new Array(a.length);
-
-  for (let i = 0; i < a.length; i++) {
-    c[i] = new Array(a[i].length);
-    for (let j = 0; j < a[i].length; j++) {
-      c[i][j] = a[i][j] * b;
-    }
-  }
-
-  return c;
-}
-
-function matrixMultiplyHadamard(a, b) {
-  if (a.length !== b.length) {
-    throw new Error();
-  }
-  if (a[0].length !== b[0].length) {
-    throw new Error();
-  }
-
-  const c = new Array(a.length);
-  for (let i = 0; i < a.length; i++) {
-    c[i] = new Array(a[i].length);
-    for (let j = 0; j < a[i].length; j++) {
-      c[i][j] = a[i][j] * b[i][j];
-    }
-  }
-
-  return c;
-}
-
-function matrixMultiply(a, b) {
-  if (a[0].length !== b.length) {
-    throw new Error();
-  }
-
-  const n = a.length;
-  const m = a[0].length;
-  const p = b[0].length;
-
-  const c = new Array(n);
-
-  for (let i = 0; i < n; i++) {
-    c[i] = new Array(p);
-    for (let j = 0; j < p; j++) {
-      c[i][j] = 0;
-      for (let k = 0; k < m; k++) {
-        c[i][j] += a[i][k] * b[k][j];
+  static transpose(matrix) {
+    const newMatrix = new Matrix(matrix.cols, matrix.rows);
+  
+    for (let m = 0; m < newMatrix.rows; m++) {
+      for (let n = 0; n < newMatrix.cols; n++) {
+        newMatrix.set(m, n, matrix.get(n, m));
       }
     }
+  
+    return newMatrix;
   }
 
-  return c;
-}
-
-function matrixSubtract(a, b) {
-  if (a.length !== b.length || a[0].length !== b[0].length) {
-    throw new Error();
-  }
-
-  const c = new Array(a.length);
-
-  for (let i = 0; i < a.length; i++) {
-    c[i] = new Array(a[i].length);
-    for (let j = 0; j < a[i].length; j++) {
-      c[i][j] = a[i][j] - b[i][j];
+  static multiply(a, b) {
+    if (a.cols !== b.rows) {
+      throw new Error();
     }
-  }
 
-  return c;
-}
+    const n = a.rows;
+    const m = a.cols;
+    const p = b.cols;
 
-function matrixAdd(a, b) {
-  if (a.length !== b.length || a[0].length !== b[0].length) {
-    throw new Error();
-  }
+    const c = new Matrix(n, p);
 
-  const c = new Array(a.length);
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < p; j++) {
+        let v = 0;
 
-  for (let i = 0; i < a.length; i++) {
-    c[i] = new Array(a[i].length);
-    for (let j = 0; j < a[i].length; j++) {
-      c[i][j] = a[i][j] + b[i][j];
+        for (let k = 0; k < m; k++) {
+          v += a.get(i, k) * b.get(k, j);
+        }
+
+        c.set(i, j, v);
+      }
     }
+
+    return c;
   }
 
-  return c;
+  set(m, n, v) {
+    const i = n + m * this.cols;
+    this.data[i] = v;
+
+    return this;
+  }
+
+  get(m, n) {
+    const i = n + m * this.cols;
+
+    return this.data[i];
+  }
+
+  fillRandom() {
+    for (let i = 0; i < this.data.length; i++) {
+      this.data[i] = Math.random() * 2 - 1;
+    }
+
+    return this;
+  }
+
+  multiplyScalar(v) {
+    for (let i = 0; i < this.data.length; i++) {
+      this.data[i] = this.data[i] * v;
+    }
+
+    return this;
+  }
+
+  multiplyHadamard(b) {
+    if (this.rows !== b.rows || this.cols !== b.cols) {
+      throw new Error();
+    }
+  
+    for (let i = 0; i < this.data.length; i++) {
+      this.data[i] = this.data[i] * b.data[i];
+    }
+  
+    return this;
+  }
+
+  subtract(b) {
+    if (this.rows !== b.rows || this.cols !== b.cols) {
+      throw new Error();
+    }
+  
+    for (let i = 0; i < this.data.length; i++) {
+      this.data[i] = this.data[i] - b.data[i];
+    }
+  
+    return this;
+  }
+
+  add(b) {
+    if (this.rows !== b.rows || this.cols !== b.cols) {
+      throw new Error();
+    }
+
+    for (let i = 0; i < this.data.length; i++) {
+      this.data[i] = this.data[i] + b.data[i];
+    }
+  
+    return this;
+  }
+
+  map(fn) {
+    this.data = this.data.map(fn);
+
+    return this;
+  }
+
+  copy() {
+    return new Matrix(this.rows, this.cols, Float32Array.from(this.data));
+  }
+
+  toVectorArray() {
+    if (this.cols > 1) {
+      throw new Error();
+    }
+
+    return Array.from(this.data);
+  }
+
+  toArray() {
+    const a = new Array(this.rows);
+
+    for (let m = 0; m < this.rows; m++) {
+      a[m] = new Array(this.cols);
+
+      for (let n = 0; n < this.cols; n++) {
+        a[m][n] = this.get(m, n);
+      }
+    }
+
+    return a;
+  }
+
+  toJSON() {
+    return {
+      rows: this.rows,
+      cols: this.cols,
+      data: Array.from(this.data),
+    };
+  }
+
+  static deserialize(data) {
+    return new Matrix(
+      data.rows,
+      data.cols,
+      Float32Array.from(data.data),
+    );
+  }
 }
